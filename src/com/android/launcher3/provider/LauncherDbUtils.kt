@@ -26,6 +26,7 @@ import android.os.PersistableBundle
 import android.os.Process
 import android.os.UserManager
 import android.text.TextUtils
+import android.util.Log;
 import com.android.launcher3.LauncherAppState
 import com.android.launcher3.LauncherSettings
 import com.android.launcher3.Utilities
@@ -38,6 +39,7 @@ import com.android.launcher3.shortcuts.ShortcutKey
 import com.android.launcher3.util.IntArray
 import com.android.launcher3.util.IntSet
 import com.android.launcher3.util.PackageManagerHelper
+import java.lang.Exception
 
 /** A set of utility methods for Launcher DB used for DB updates and migration. */
 object LauncherDbUtils {
@@ -166,53 +168,63 @@ object LauncherDbUtils {
                 continue
             }
             val intent = lc.parseIntent()
-            if (intent == null) {
-                deletedShortcuts.add(lc.id)
-                continue
-            }
-            if (TextUtils.isEmpty(lc.title)) {
-                deletedShortcuts.add(lc.id)
-                continue
-            }
 
-            // Make sure the target intent can be launched without any permissions. Otherwise remove
-            // the shortcut
-            val ri = context.packageManager.resolveActivity(intent, 0)
-            if (ri == null || !TextUtils.isEmpty(ri.activityInfo.permission)) {
-                deletedShortcuts.add(lc.id)
-                continue
-            }
-            val extras =
-                PersistableBundle().apply {
-                    putString(
-                        IconCache.EXTRA_SHORTCUT_BADGE_OVERRIDE_PACKAGE,
-                        ri.activityInfo.packageName,
-                    )
-                }
-            val infoBuilder =
-                ShortcutInfo.Builder(context, "migrated_shortcut-${lc.id}")
-                    .setIntent(intent)
-                    .setExtras(extras)
-                    .setShortLabel(lc.title)
-
-            var bitmap: Bitmap? = null
-            val iconData = lc.iconBlob
-            if (iconData != null) {
-                bitmap = BitmapFactory.decodeByteArray(iconData, 0, iconData.size)
-            }
-            if (bitmap != null) {
-                infoBuilder.setIcon(Icon.createWithBitmap(bitmap))
-            }
-
-            val info = infoBuilder.build()
             try {
-                if (!PinRequestHelper.createRequestForShortcut(context, info).accept()) {
+                if (intent == null) {
                     deletedShortcuts.add(lc.id)
                     continue
                 }
-            } catch (e: Exception) {
-                deletedShortcuts.add(lc.id)
-                continue
+                if (TextUtils.isEmpty(lc.title)) {
+                    deletedShortcuts.add(lc.id)
+                    continue
+                }
+
+                // Make sure the target intent can be launched without any permissions. Otherwise remove
+                // the shortcut
+                val ri = context.packageManager.resolveActivity(intent, 0)
+                if (ri == null || !TextUtils.isEmpty(ri.activityInfo.permission)) {
+                    deletedShortcuts.add(lc.id)
+                    continue
+                }
+
+
+                val extras =
+                    PersistableBundle().apply {
+                        putString(
+                            IconCache.EXTRA_SHORTCUT_BADGE_OVERRIDE_PACKAGE,
+                            ri.activityInfo.packageName,
+                        )
+                    }
+                val infoBuilder =
+                    ShortcutInfo.Builder(context, "migrated_shortcut-${lc.id}")
+                        .setIntent(intent)
+                        .setExtras(extras)
+                        .setShortLabel(lc.title)
+
+                var bitmap: Bitmap? = null
+                val iconData = lc.iconBlob
+                if (iconData != null) {
+                    bitmap = BitmapFactory.decodeByteArray(iconData, 0, iconData.size)
+                }
+                if (bitmap != null) {
+                    infoBuilder.setIcon(Icon.createWithBitmap(bitmap))
+                }
+
+                val info = infoBuilder.build()
+                try {
+                    if (!PinRequestHelper.createRequestForShortcut(context, info).accept()) {
+                        deletedShortcuts.add(lc.id)
+                        continue
+                    }
+                } catch (e: Exception) {
+                    deletedShortcuts.add(lc.id)
+                    continue
+                }
+
+            }  catch (e: Throwable) {
+                Log.e("migrateLegacyShortcuts", "unable to migrate, id " + lc.id, e);
+                deletedShortcuts.add(lc.id);
+                continue;
             }
             val update =
                 ContentValues().apply {
